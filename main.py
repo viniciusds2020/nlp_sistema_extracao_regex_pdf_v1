@@ -14,6 +14,7 @@ Funcionalidades:
 6. Simulação de cenários what-if
 7. Dashboard visual e relatórios
 8. Otimização linear para alocação de estoque e orçamento
+9. Previsão de demanda com Exponential Smoothing (Holt-Winters)
 
 Uso:
     python main.py [--dias DIAS] [--cenario CENARIO] [--output PASTA] [--otimizar]
@@ -24,6 +25,7 @@ Argumentos:
     --output: Pasta para salvar relatórios (padrão: reports)
     --otimizar: Executar otimização linear de alocação
     --orcamento: Orçamento para otimização de compras (ex: 50000)
+    --prever: Gerar previsões de demanda para N dias (ex: 7)
 
 Autor: Sistema de Otimização de Estoque
 Data: 2024
@@ -86,6 +88,19 @@ try:
     LINEAR_OPT_AVAILABLE = PULP_AVAILABLE
 except ImportError:
     LINEAR_OPT_AVAILABLE = False
+
+# Importação condicional do módulo de previsão
+try:
+    from forecasting import (
+        PrevisaoDemanda,
+        gerar_relatorio_previsao,
+        previsoes_para_dataframe,
+        ResultadoPrevisao,
+        STATSMODELS_AVAILABLE
+    )
+    FORECASTING_AVAILABLE = STATSMODELS_AVAILABLE
+except ImportError:
+    FORECASTING_AVAILABLE = False
 
 
 class SistemaOtimizacaoEstoque:
@@ -545,6 +560,82 @@ class SistemaOtimizacaoEstoque:
 
         print("\n" + "=" * 60)
 
+    def prever_demanda(
+        self,
+        horizonte: int = 7,
+        metodo: str = "auto",
+        produto_id: str = None
+    ) -> dict:
+        """
+        Gera previsões de demanda usando Exponential Smoothing.
+
+        Args:
+            horizonte: Número de dias a prever
+            metodo: 'auto', 'ses', 'holt', 'holt_winters'
+            produto_id: ID do produto (None para todos)
+
+        Returns:
+            Dict com resultados de previsão
+        """
+        self._verificar_inicializacao()
+
+        if not FORECASTING_AVAILABLE:
+            raise ImportError(
+                "statsmodels não está instalado. Instale com: pip install statsmodels"
+            )
+
+        previsor = PrevisaoDemanda(self.historico_vendas)
+
+        if produto_id:
+            # Previsão para produto específico
+            if metodo == "auto":
+                resultado = previsor.auto_selecionar_metodo(produto_id, None, horizonte)
+            elif metodo == "ses":
+                resultado = previsor.simple_exponential_smoothing(produto_id, None, horizonte)
+            elif metodo == "holt":
+                resultado = previsor.holt_linear(produto_id, None, horizonte)
+            elif metodo == "holt_winters":
+                resultado = previsor.holt_winters(produto_id, None, horizonte)
+            else:
+                resultado = previsor.auto_selecionar_metodo(produto_id, None, horizonte)
+
+            return {produto_id: resultado}
+        else:
+            # Previsão para todos os produtos
+            return previsor.prever_todos_produtos(horizonte, metodo)
+
+    def exibir_previsoes(self, resultados: dict) -> None:
+        """
+        Exibe as previsões no console.
+
+        Args:
+            resultados: Dict com ResultadoPrevisao por produto
+        """
+        print("\n" + "=" * 60)
+        print("   PREVISÃO DE DEMANDA (Exponential Smoothing)")
+        print("=" * 60)
+
+        for produto_id, resultado in resultados.items():
+            nome = PRODUTOS.get(produto_id, {}).get("nome", produto_id)
+
+            print(f"\n   📈 {nome}")
+            print("   " + "-" * 40)
+            print(f"   Método: {resultado.metodo}")
+            print(f"   MAPE: {resultado.metricas['mape']:.1f}%")
+            print(f"   MAE: {resultado.metricas['mae']:.1f} unidades")
+
+            print(f"\n   Previsões:")
+            total_previsto = 0
+            for _, row in resultado.previsoes.iterrows():
+                data_str = row["data"].strftime("%d/%m")
+                prev = row["previsao"]
+                total_previsto += prev
+                print(f"      {data_str}: {prev:>6.0f} un [{row['limite_inferior']:.0f}-{row['limite_superior']:.0f}]")
+
+            print(f"\n   Total previsto: {total_previsto:.0f} unidades")
+
+        print("\n" + "=" * 60)
+
     def _verificar_inicializacao(self) -> None:
         """Verifica se o sistema foi inicializado."""
         if not self._inicializado:
@@ -620,6 +711,22 @@ Exemplos de uso:
         "--otimizar-mix",
         action="store_true",
         help="Otimizar mix de produtos (maximizar margem)"
+    )
+
+    parser.add_argument(
+        "--prever",
+        type=int,
+        default=None,
+        metavar="DIAS",
+        help="Gerar previsão de demanda para N dias (ex: 7)"
+    )
+
+    parser.add_argument(
+        "--metodo-previsao",
+        type=str,
+        default="auto",
+        choices=["auto", "ses", "holt", "holt_winters"],
+        help="Método de previsão: auto, ses, holt, holt_winters (padrão: auto)"
     )
 
     args = parser.parse_args()
@@ -715,6 +822,32 @@ Exemplos de uso:
                     path_otim = os.path.join(args.output, "otimizacao_mix.csv")
                     resultado.alocacoes.to_csv(path_otim, index=False)
                     print(f"\n   Resultado salvo em: {path_otim}")
+
+    # Previsão de demanda
+    if args.prever:
+        if not FORECASTING_AVAILABLE:
+            print("\n⚠️  statsmodels não está instalado. Instale com: pip install statsmodels")
+        else:
+            print(f"\n" + "=" * 60)
+            print(f"   PREVISÃO DE DEMANDA: {args.prever} dias")
+            print("=" * 60)
+
+            resultados_previsao = sistema.prever_demanda(
+                horizonte=args.prever,
+                metodo=args.metodo_previsao
+            )
+
+            sistema.exibir_previsoes(resultados_previsao)
+
+            # Salvar previsões em CSV
+            df_previsoes = previsoes_para_dataframe(resultados_previsao)
+            path_previsao = os.path.join(args.output, "previsao_demanda.csv")
+            df_previsoes.to_csv(path_previsao, index=False)
+            print(f"\n   Previsões salvas em: {path_previsao}")
+
+            # Resumo total
+            total_previsto = df_previsoes["previsao"].sum()
+            print(f"\n   📊 Demanda total prevista ({args.prever} dias): {total_previsto:,.0f} unidades")
 
     # Gerar relatórios
     arquivos = sistema.gerar_relatorios(args.output)
