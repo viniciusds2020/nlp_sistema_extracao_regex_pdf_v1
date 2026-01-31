@@ -38,21 +38,28 @@ Sistema completo para otimização de estoque de um centro de distribuição que
 - Relatório de custos (manutenção vs risco de falta)
 - Exportação para CSV e TXT
 
+### 7. Otimização Linear (PuLP)
+- **Alocação ótima**: Distribui estoque do CD para lojas minimizando custos
+- **Otimização com orçamento**: Decide compras respeitando orçamento limitado
+- **Mix de produtos**: Maximiza margem considerando restrições de espaço
+- **Planejamento multi-período**: Planeja reposições para múltiplas semanas
+
 ## Estrutura do Projeto
 
 ```
-├── main.py                    # Script principal de execução
-├── requirements.txt           # Dependências do projeto
-├── README.md                  # Documentação
+├── main.py                     # Script principal de execução
+├── requirements.txt            # Dependências do projeto
+├── README.md                   # Documentação
 ├── src/
 │   ├── __init__.py
-│   ├── data_generator.py      # Geração de dados sintéticos
+│   ├── data_generator.py       # Geração de dados sintéticos
 │   ├── statistical_analysis.py # Análises estatísticas
 │   ├── inventory_optimizer.py  # Otimização e recomendações
-│   └── visualization.py       # Gráficos e relatórios
-├── reports/                   # Relatórios gerados
-├── data/                      # Dados (se necessário)
-└── tests/                     # Testes (futuro)
+│   ├── linear_optimization.py  # Otimização linear (PuLP)
+│   └── visualization.py        # Gráficos e relatórios
+├── reports/                    # Relatórios gerados
+├── data/                       # Dados (se necessário)
+└── tests/                      # Testes (futuro)
 ```
 
 ## Instalação
@@ -89,6 +96,18 @@ python main.py --output meus_relatorios
 
 # Definir seed para reprodutibilidade
 python main.py --seed 123
+
+# Executar otimização linear de alocação
+python main.py --otimizar
+
+# Otimizar compras com orçamento de R$ 50.000
+python main.py --orcamento 50000
+
+# Otimizar mix de produtos
+python main.py --otimizar-mix
+
+# Combinar múltiplas otimizações
+python main.py --otimizar --orcamento 100000
 ```
 
 ### Uso como Biblioteca
@@ -191,9 +210,62 @@ Onde:
 - `recomendacoes.csv`: Lista de recomendações de reposição
 - `alertas.csv`: Alertas ativos
 
+## Otimização Linear
+
+O sistema utiliza a biblioteca PuLP para resolver problemas de otimização linear.
+
+### Problemas Resolvidos
+
+#### 1. Alocação Ótima de Estoque
+Distribui o estoque do Centro de Distribuição para as lojas minimizando:
+- Custo de manutenção de estoque
+- Risco de stockout (falta de produtos)
+
+```python
+# Via código
+resultado = sistema.otimizar_alocacao(nivel_servico=0.95)
+
+# Via CLI
+python main.py --otimizar
+```
+
+#### 2. Otimização com Orçamento Limitado
+Decide quanto comprar de cada produto respeitando um orçamento máximo:
+
+```python
+# Via código
+resultado = sistema.otimizar_compras_orcamento(orcamento=50000)
+
+# Via CLI
+python main.py --orcamento 50000
+```
+
+#### 3. Otimização de Mix de Produtos
+Maximiza a margem de lucro considerando restrições de espaço:
+
+```python
+# Via código
+resultado = sistema.otimizar_mix_produtos(espaco_total=5000)
+
+# Via CLI
+python main.py --otimizar-mix
+```
+
+### Formulação Matemática
+
+#### Função Objetivo (Minimização de Custo)
+```
+Minimizar: Σ (custo_manutencao × estoque) + Σ (custo_stockout × falta)
+```
+
+#### Restrições
+- Disponibilidade no CD: Σ alocação[loja] ≤ estoque_disponivel
+- Nível de serviço: estoque + alocação ≥ nível_serviço × demanda
+- Orçamento: Σ (preço × quantidade) ≤ orçamento_total
+
 ## Extensões Futuras
 
-- [ ] Otimização usando programação linear
+- [x] ~~Otimização usando programação linear~~
 - [ ] Previsão com suavização exponencial (Holt-Winters)
 - [ ] Interface web com Streamlit
 - [ ] Integração com banco de dados
@@ -206,6 +278,7 @@ Onde:
 - numpy >= 1.23.0
 - scipy >= 1.9.0
 - matplotlib >= 3.6.0
+- pulp >= 2.7.0 (otimização linear)
 
 ## Licença
 

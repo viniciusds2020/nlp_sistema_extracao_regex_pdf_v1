@@ -13,19 +13,23 @@ Funcionalidades:
 5. Alertas de estoque crítico
 6. Simulação de cenários what-if
 7. Dashboard visual e relatórios
+8. Otimização linear para alocação de estoque e orçamento
 
 Uso:
-    python main.py [--dias DIAS] [--cenario CENARIO] [--output PASTA]
+    python main.py [--dias DIAS] [--cenario CENARIO] [--output PASTA] [--otimizar]
 
 Argumentos:
     --dias: Número de dias de histórico a analisar (padrão: 30)
     --cenario: Fator de demanda para simulação what-if (ex: 1.3 para +30%)
     --output: Pasta para salvar relatórios (padrão: reports)
+    --otimizar: Executar otimização linear de alocação
+    --orcamento: Orçamento para otimização de compras (ex: 50000)
 
 Autor: Sistema de Otimização de Estoque
 Data: 2024
 """
 
+from typing import TYPE_CHECKING
 import argparse
 import os
 import sys
@@ -69,6 +73,19 @@ from visualization import (
     gerar_relatorio_texto,
     plotar_todos_graficos
 )
+
+# Importação condicional do módulo de otimização linear
+try:
+    from linear_optimization import (
+        OtimizadorLinear,
+        otimizar_mix_produtos,
+        gerar_relatorio_otimizacao,
+        ResultadoOtimizacao,
+        PULP_AVAILABLE
+    )
+    LINEAR_OPT_AVAILABLE = PULP_AVAILABLE
+except ImportError:
+    LINEAR_OPT_AVAILABLE = False
 
 
 class SistemaOtimizacaoEstoque:
@@ -371,6 +388,163 @@ class SistemaOtimizacaoEstoque:
 
         print("\n" + "=" * 60)
 
+    def otimizar_alocacao(
+        self,
+        estoque_cd: dict = None,
+        nivel_servico: float = 0.95
+    ) -> 'ResultadoOtimizacao':
+        """
+        Executa otimização linear para alocação de estoque.
+
+        Distribui o estoque do Centro de Distribuição para as lojas
+        minimizando custo total (manutenção + risco de stockout).
+
+        Args:
+            estoque_cd: Dict com estoque disponível por produto no CD
+            nivel_servico: Nível de serviço mínimo (0-1)
+
+        Returns:
+            ResultadoOtimizacao com alocações ótimas
+        """
+        self._verificar_inicializacao()
+
+        if not LINEAR_OPT_AVAILABLE:
+            raise ImportError(
+                "PuLP não está instalado. Instale com: pip install pulp"
+            )
+
+        # Estoque padrão se não fornecido
+        if estoque_cd is None:
+            estoque_cd = {
+                prod: int(self.metricas_estoque[
+                    self.metricas_estoque["produto_id"] == prod
+                ]["demanda_media"].sum() * 30)
+                for prod in PRODUTOS.keys()
+            }
+
+        otimizador = OtimizadorLinear(self.metricas_estoque)
+        return otimizador.otimizar_alocacao_estoque(
+            estoque_disponivel=estoque_cd,
+            nivel_servico_minimo=nivel_servico
+        )
+
+    def otimizar_compras_orcamento(
+        self,
+        orcamento: float,
+        horizonte_dias: int = 30
+    ) -> 'ResultadoOtimizacao':
+        """
+        Otimiza compras com orçamento limitado.
+
+        Decide quanto comprar de cada produto respeitando o orçamento,
+        minimizando o risco de stockout.
+
+        Args:
+            orcamento: Orçamento total disponível
+            horizonte_dias: Horizonte de planejamento em dias
+
+        Returns:
+            ResultadoOtimizacao com quantidades ótimas de compra
+        """
+        self._verificar_inicializacao()
+
+        if not LINEAR_OPT_AVAILABLE:
+            raise ImportError(
+                "PuLP não está instalado. Instale com: pip install pulp"
+            )
+
+        # Preços de compra (60% do preço de venda)
+        precos = {
+            prod: config["preco_unitario"] * 0.6
+            for prod, config in PRODUTOS.items()
+        }
+
+        otimizador = OtimizadorLinear(self.metricas_estoque)
+        return otimizador.otimizar_reposicao_orcamento(
+            orcamento=orcamento,
+            precos_compra=precos,
+            horizonte_dias=horizonte_dias
+        )
+
+    def otimizar_mix_produtos(
+        self,
+        espaco_total: float = 5000
+    ) -> 'ResultadoOtimizacao':
+        """
+        Otimiza o mix de produtos considerando espaço e margem.
+
+        Args:
+            espaco_total: Espaço total disponível em m³
+
+        Returns:
+            ResultadoOtimizacao com quantidades ótimas
+        """
+        self._verificar_inicializacao()
+
+        if not LINEAR_OPT_AVAILABLE:
+            raise ImportError(
+                "PuLP não está instalado. Instale com: pip install pulp"
+            )
+
+        # Espaço por unidade (estimado)
+        espaco = {prod: 0.05 for prod in PRODUTOS.keys()}
+
+        # Margem por produto (30% do preço)
+        margem = {
+            prod: config["preco_unitario"] * 0.3
+            for prod, config in PRODUTOS.items()
+        }
+
+        return otimizar_mix_produtos(
+            self.metricas_estoque,
+            espaco_total=espaco_total,
+            espaco_por_unidade=espaco,
+            margem_por_produto=margem
+        )
+
+    def exibir_resultado_otimizacao(self, resultado: 'ResultadoOtimizacao') -> None:
+        """
+        Exibe os resultados da otimização no console.
+
+        Args:
+            resultado: Objeto ResultadoOtimizacao
+        """
+        print("\n" + "=" * 60)
+        print("   RESULTADO DA OTIMIZAÇÃO LINEAR")
+        print("=" * 60)
+        print(f"\n   Status: {resultado.status}")
+        print(f"   Tempo de execução: {resultado.tempo_execucao}s")
+        print(f"   {resultado.mensagem}")
+
+        print(f"\n   💰 CUSTOS OTIMIZADOS")
+        print("   " + "-" * 40)
+        print(f"   Custo Total:      R$ {resultado.custo_total:>12,.2f}")
+        if resultado.custo_manutencao > 0:
+            print(f"   Custo Manutenção: R$ {resultado.custo_manutencao:>12,.2f}")
+        if resultado.custo_stockout > 0:
+            print(f"   Custo Stockout:   R$ {resultado.custo_stockout:>12,.2f}")
+
+        if len(resultado.alocacoes) > 0:
+            print(f"\n   📦 TOP 10 ALOCAÇÕES/RECOMENDAÇÕES")
+            print("   " + "-" * 40)
+
+            # Mostrar primeiras 10 linhas
+            for i, (_, row) in enumerate(resultado.alocacoes.head(10).iterrows()):
+                if "quantidade_alocada" in row:
+                    print(f"   {row.get('loja_id', '')} - {row.get('produto_nome', row.get('produto_id', ''))[:20]}")
+                    print(f"      Alocar: {int(row['quantidade_alocada'])} unidades")
+                elif "quantidade_compra" in row:
+                    print(f"   {row.get('produto_nome', row.get('produto_id', ''))[:25]}")
+                    print(f"      Comprar: {int(row['quantidade_compra'])} un | R$ {row.get('custo_total', 0):,.2f}")
+                elif "quantidade_otima" in row:
+                    print(f"   {row.get('produto_nome', row.get('produto_id', ''))[:25]}")
+                    print(f"      Quantidade: {int(row['quantidade_otima'])} | Margem: R$ {row.get('margem_total', 0):,.2f}")
+
+            if len(resultado.alocacoes) > 10:
+                print(f"\n   ... e mais {len(resultado.alocacoes) - 10} itens")
+
+        print("\n" + "=" * 60)
+
     def _verificar_inicializacao(self) -> None:
         """Verifica se o sistema foi inicializado."""
         if not self._inicializado:
@@ -429,6 +603,25 @@ Exemplos de uso:
         help="Não gerar gráficos (apenas relatórios CSV/TXT)"
     )
 
+    parser.add_argument(
+        "--otimizar",
+        action="store_true",
+        help="Executar otimização linear de alocação de estoque"
+    )
+
+    parser.add_argument(
+        "--orcamento",
+        type=float,
+        default=None,
+        help="Orçamento para otimização de compras (ex: 50000)"
+    )
+
+    parser.add_argument(
+        "--otimizar-mix",
+        action="store_true",
+        help="Otimizar mix de produtos (maximizar margem)"
+    )
+
     args = parser.parse_args()
 
     # Inicializar sistema
@@ -470,6 +663,58 @@ Exemplos de uso:
         print(f"\n   Impacto nos Custos:")
         print(f"   Custo Original: R$ {custo_original:,.2f}")
         print(f"   Custo Simulado: R$ {custo_simulado:,.2f}")
+
+    # Otimização linear
+    if args.otimizar or args.orcamento or getattr(args, 'otimizar_mix', False):
+        if not LINEAR_OPT_AVAILABLE:
+            print("\n⚠️  PuLP não está instalado. Instale com: pip install pulp")
+        else:
+            # Otimização de alocação
+            if args.otimizar:
+                print(f"\n" + "=" * 60)
+                print("   OTIMIZAÇÃO LINEAR: Alocação de Estoque")
+                print("=" * 60)
+
+                resultado = sistema.otimizar_alocacao(nivel_servico=0.95)
+                sistema.exibir_resultado_otimizacao(resultado)
+
+                # Salvar resultado
+                if len(resultado.alocacoes) > 0:
+                    path_otim = os.path.join(args.output, "otimizacao_alocacao.csv")
+                    resultado.alocacoes.to_csv(path_otim, index=False)
+                    print(f"\n   Resultado salvo em: {path_otim}")
+
+            # Otimização com orçamento
+            if args.orcamento:
+                print(f"\n" + "=" * 60)
+                print(f"   OTIMIZAÇÃO LINEAR: Compras com Orçamento R$ {args.orcamento:,.2f}")
+                print("=" * 60)
+
+                resultado = sistema.otimizar_compras_orcamento(
+                    orcamento=args.orcamento
+                )
+                sistema.exibir_resultado_otimizacao(resultado)
+
+                # Salvar resultado
+                if len(resultado.alocacoes) > 0:
+                    path_otim = os.path.join(args.output, "otimizacao_compras.csv")
+                    resultado.alocacoes.to_csv(path_otim, index=False)
+                    print(f"\n   Resultado salvo em: {path_otim}")
+
+            # Otimização de mix
+            if getattr(args, 'otimizar_mix', False):
+                print(f"\n" + "=" * 60)
+                print("   OTIMIZAÇÃO LINEAR: Mix de Produtos")
+                print("=" * 60)
+
+                resultado = sistema.otimizar_mix_produtos(espaco_total=5000)
+                sistema.exibir_resultado_otimizacao(resultado)
+
+                # Salvar resultado
+                if len(resultado.alocacoes) > 0:
+                    path_otim = os.path.join(args.output, "otimizacao_mix.csv")
+                    resultado.alocacoes.to_csv(path_otim, index=False)
+                    print(f"\n   Resultado salvo em: {path_otim}")
 
     # Gerar relatórios
     arquivos = sistema.gerar_relatorios(args.output)
