@@ -51,10 +51,19 @@ Sistema completo para otimização de estoque de um centro de distribuição que
 - **Seleção automática**: Escolhe o melhor método baseado no MAPE
 - **Intervalos de confiança**: Previsões com limites superior e inferior
 
+### 9. Dashboard Web (Streamlit)
+- **Design estilo Tableau**: Interface moderna e profissional
+- **KPIs em tempo real**: Cards com métricas principais
+- **Gráficos interativos**: Plotly com hover e zoom
+- **Filtros dinâmicos**: Por loja, produto e status
+- **5 abas funcionais**: Visão Geral, Por Loja, Reposição, Previsão, Otimização
+- **Exportação de dados**: Download em CSV
+
 ## Estrutura do Projeto
 
 ```
-├── main.py                     # Script principal de execução
+├── main.py                     # Script principal (CLI)
+├── app.py                      # Dashboard Streamlit (Web)
 ├── requirements.txt            # Dependências do projeto
 ├── README.md                   # Documentação
 ├── src/
@@ -83,7 +92,15 @@ pip install -r requirements.txt
 
 ## Uso
 
-### Execução Básica
+### Dashboard Web (Recomendado)
+```bash
+# Iniciar o dashboard Streamlit
+streamlit run app.py
+
+# O navegador abrirá automaticamente em http://localhost:8501
+```
+
+### Linha de Comando (CLI)
 ```bash
 python main.py
 ```
@@ -341,7 +358,7 @@ O sistema calcula automaticamente:
 
 - [x] ~~Otimização usando programação linear~~
 - [x] ~~Previsão com suavização exponencial (Holt-Winters)~~
-- [ ] Interface web com Streamlit
+- [x] ~~Interface web com Streamlit~~
 - [ ] Integração com banco de dados
 - [ ] API REST para integração com ERPs
 
@@ -354,6 +371,8 @@ O sistema calcula automaticamente:
 - matplotlib >= 3.6.0
 - pulp >= 2.7.0 (otimização linear)
 - statsmodels >= 0.14.0 (previsão de demanda)
+- streamlit >= 1.25.0 (dashboard web)
+- plotly >= 5.15.0 (gráficos interativos)
 
 ## Licença
 

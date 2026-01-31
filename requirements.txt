@@ -17,5 +17,6 @@ pulp>=2.7.0
 # Previsão de demanda (Exponential Smoothing)
 statsmodels>=0.14.0
 
-# Opcional: para interface web (futuro)
-# streamlit>=1.25.0
+# Interface web (Dashboard)
+streamlit>=1.25.0
+plotly>=5.15.0
