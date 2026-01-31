@@ -1,0 +1,15 @@
+# Sistema de Otimização de Estoque
+# Dependências do projeto
+
+# Manipulação de dados
+pandas>=1.5.0
+numpy>=1.23.0
+
+# Análise estatística
+scipy>=1.9.0
+
+# Visualização
+matplotlib>=3.6.0
+
+# Opcional: para interface web (futuro)
+# streamlit>=1.25.0
