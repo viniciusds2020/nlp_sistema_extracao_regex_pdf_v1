@@ -38,21 +38,45 @@ Sistema completo para otimização de estoque de um centro de distribuição que
 - Relatório de custos (manutenção vs risco de falta)
 - Exportação para CSV e TXT
 
+### 7. Otimização Linear (PuLP)
+- **Alocação ótima**: Distribui estoque do CD para lojas minimizando custos
+- **Otimização com orçamento**: Decide compras respeitando orçamento limitado
+- **Mix de produtos**: Maximiza margem considerando restrições de espaço
+- **Planejamento multi-período**: Planeja reposições para múltiplas semanas
+
+### 8. Previsão de Demanda (Exponential Smoothing)
+- **Simple Exponential Smoothing (SES)**: Para séries estacionárias
+- **Holt's Linear Trend**: Para séries com tendência
+- **Holt-Winters**: Para séries com tendência e sazonalidade semanal
+- **Seleção automática**: Escolhe o melhor método baseado no MAPE
+- **Intervalos de confiança**: Previsões com limites superior e inferior
+
+### 9. Dashboard Web (Streamlit)
+- **Design estilo Tableau**: Interface moderna e profissional
+- **KPIs em tempo real**: Cards com métricas principais
+- **Gráficos interativos**: Plotly com hover e zoom
+- **Filtros dinâmicos**: Por loja, produto e status
+- **5 abas funcionais**: Visão Geral, Por Loja, Reposição, Previsão, Otimização
+- **Exportação de dados**: Download em CSV
+
 ## Estrutura do Projeto
 
 ```
-├── main.py                    # Script principal de execução
-├── requirements.txt           # Dependências do projeto
-├── README.md                  # Documentação
+├── main.py                     # Script principal (CLI)
+├── app.py                      # Dashboard Streamlit (Web)
+├── requirements.txt            # Dependências do projeto
+├── README.md                   # Documentação
 ├── src/
 │   ├── __init__.py
-│   ├── data_generator.py      # Geração de dados sintéticos
+│   ├── data_generator.py       # Geração de dados sintéticos
 │   ├── statistical_analysis.py # Análises estatísticas
 │   ├── inventory_optimizer.py  # Otimização e recomendações
-│   └── visualization.py       # Gráficos e relatórios
-├── reports/                   # Relatórios gerados
-├── data/                      # Dados (se necessário)
-└── tests/                     # Testes (futuro)
+│   ├── linear_optimization.py  # Otimização linear (PuLP)
+│   ├── forecasting.py          # Previsão de demanda (Holt-Winters)
+│   └── visualization.py        # Gráficos e relatórios
+├── reports/                    # Relatórios gerados
+├── data/                       # Dados (se necessário)
+└── tests/                      # Testes (futuro)
 ```
 
 ## Instalação
@@ -68,7 +92,15 @@ pip install -r requirements.txt
 
 ## Uso
 
-### Execução Básica
+### Dashboard Web (Recomendado)
+```bash
+# Iniciar o dashboard Streamlit
+streamlit run app.py
+
+# O navegador abrirá automaticamente em http://localhost:8501
+```
+
+### Linha de Comando (CLI)
 ```bash
 python main.py
 ```
@@ -89,6 +121,27 @@ python main.py --output meus_relatorios
 
 # Definir seed para reprodutibilidade
 python main.py --seed 123
+
+# Executar otimização linear de alocação
+python main.py --otimizar
+
+# Otimizar compras com orçamento de R$ 50.000
+python main.py --orcamento 50000
+
+# Otimizar mix de produtos
+python main.py --otimizar-mix
+
+# Combinar múltiplas otimizações
+python main.py --otimizar --orcamento 100000
+
+# Gerar previsão de demanda para 7 dias
+python main.py --prever 7
+
+# Previsão com método específico (auto, ses, holt, holt_winters)
+python main.py --prever 14 --metodo-previsao holt_winters
+
+# Combinação completa
+python main.py --otimizar --prever 7 --cenario 1.2
 ```
 
 ### Uso como Biblioteca
@@ -191,11 +244,121 @@ Onde:
 - `recomendacoes.csv`: Lista de recomendações de reposição
 - `alertas.csv`: Alertas ativos
 
+## Otimização Linear
+
+O sistema utiliza a biblioteca PuLP para resolver problemas de otimização linear.
+
+### Problemas Resolvidos
+
+#### 1. Alocação Ótima de Estoque
+Distribui o estoque do Centro de Distribuição para as lojas minimizando:
+- Custo de manutenção de estoque
+- Risco de stockout (falta de produtos)
+
+```python
+# Via código
+resultado = sistema.otimizar_alocacao(nivel_servico=0.95)
+
+# Via CLI
+python main.py --otimizar
+```
+
+#### 2. Otimização com Orçamento Limitado
+Decide quanto comprar de cada produto respeitando um orçamento máximo:
+
+```python
+# Via código
+resultado = sistema.otimizar_compras_orcamento(orcamento=50000)
+
+# Via CLI
+python main.py --orcamento 50000
+```
+
+#### 3. Otimização de Mix de Produtos
+Maximiza a margem de lucro considerando restrições de espaço:
+
+```python
+# Via código
+resultado = sistema.otimizar_mix_produtos(espaco_total=5000)
+
+# Via CLI
+python main.py --otimizar-mix
+```
+
+### Formulação Matemática
+
+#### Função Objetivo (Minimização de Custo)
+```
+Minimizar: Σ (custo_manutencao × estoque) + Σ (custo_stockout × falta)
+```
+
+#### Restrições
+- Disponibilidade no CD: Σ alocação[loja] ≤ estoque_disponivel
+- Nível de serviço: estoque + alocação ≥ nível_serviço × demanda
+- Orçamento: Σ (preço × quantidade) ≤ orçamento_total
+
+## Previsão de Demanda
+
+O sistema utiliza a biblioteca statsmodels para previsão de demanda com Exponential Smoothing.
+
+### Métodos Disponíveis
+
+#### 1. Simple Exponential Smoothing (SES)
+Para séries estacionárias sem tendência ou sazonalidade:
+
+```python
+# Via código
+resultado = sistema.prever_demanda(horizonte=7, metodo="ses")
+
+# Via CLI
+python main.py --prever 7 --metodo-previsao ses
+```
+
+#### 2. Holt's Linear Trend
+Para séries com tendência mas sem sazonalidade:
+
+```python
+# Via código
+resultado = sistema.prever_demanda(horizonte=7, metodo="holt")
+
+# Via CLI
+python main.py --prever 7 --metodo-previsao holt
+```
+
+#### 3. Holt-Winters (Triple Exponential Smoothing)
+Para séries com tendência E sazonalidade (recomendado para dados de vendas):
+
+```python
+# Via código
+resultado = sistema.prever_demanda(horizonte=7, metodo="holt_winters")
+
+# Via CLI
+python main.py --prever 7 --metodo-previsao holt_winters
+```
+
+#### 4. Seleção Automática
+Testa todos os métodos e escolhe o com menor MAPE (erro percentual):
+
+```python
+# Via código (padrão)
+resultado = sistema.prever_demanda(horizonte=7, metodo="auto")
+
+# Via CLI
+python main.py --prever 7
+```
+
+### Métricas de Qualidade
+
+O sistema calcula automaticamente:
+- **MAE** (Mean Absolute Error): Erro absoluto médio
+- **RMSE** (Root Mean Square Error): Raiz do erro quadrático médio
+- **MAPE** (Mean Absolute Percentage Error): Erro percentual médio
+
 ## Extensões Futuras
 
-- [ ] Otimização usando programação linear
-- [ ] Previsão com suavização exponencial (Holt-Winters)
-- [ ] Interface web com Streamlit
+- [x] ~~Otimização usando programação linear~~
+- [x] ~~Previsão com suavização exponencial (Holt-Winters)~~
+- [x] ~~Interface web com Streamlit~~
 - [ ] Integração com banco de dados
 - [ ] API REST para integração com ERPs
 
@@ -206,6 +369,10 @@ Onde:
 - numpy >= 1.23.0
 - scipy >= 1.9.0
 - matplotlib >= 3.6.0
+- pulp >= 2.7.0 (otimização linear)
+- statsmodels >= 0.14.0 (previsão de demanda)
+- streamlit >= 1.25.0 (dashboard web)
+- plotly >= 5.15.0 (gráficos interativos)
 
 ## Licença
 
